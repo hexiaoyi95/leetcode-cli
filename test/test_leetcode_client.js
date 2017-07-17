@@ -2,6 +2,7 @@ var _ = require('underscore');
 var assert = require('chai').assert;
 var nock = require('nock');
 
+var log = require('../lib/log');
 var client = require('../lib/leetcode_client');
 var config = require('../lib/config');
 var core = require('../lib/core');
@@ -11,7 +12,7 @@ describe('leetcode_client', function() {
   var PROBLEM = {
     id:     389,
     name:   'Find the Difference',
-    key:    'find-the-difference',
+    slug:   'find-the-difference',
     link:   'https://leetcode.com/problems/find-the-difference',
     locked: false,
     file:   '/dev/null'
@@ -20,8 +21,10 @@ describe('leetcode_client', function() {
     msg:        'session expired, please login again',
     statusCode: -1
   };
+  var URL_ALGORITHMS = 'https://leetcode.com/api/problems/algorithms/';
 
   before(function() {
+    log.init();
     config.init();
   });
 
@@ -46,10 +49,10 @@ describe('leetcode_client', function() {
 
     it('should ok', function(done) {
       config.AUTO_LOGIN = true;
-      nock(config.URL_PROBLEMS).get('/').reply(403);
-      nock(config.URL_PROBLEMS).get('/').replyWithFile(200, './test/mock/problems.json.20160911');
+      nock(URL_ALGORITHMS).get('/').reply(403);
+      nock(URL_ALGORITHMS).get('/').replyWithFile(200, './test/mock/problems.json.20160911');
 
-      client.getProblems(USER, function(e, problems) {
+      client.getProblems('algorithms', USER, function(e, problems) {
         assert.equal(e, null);
         assert.equal(problems.length, 377);
         done();
@@ -58,9 +61,9 @@ describe('leetcode_client', function() {
 
     it('should fail if no auto login', function(done) {
       config.AUTO_LOGIN = false;
-      nock(config.URL_PROBLEMS).get('/').reply(403);
+      nock(URL_ALGORITHMS).get('/').reply(403);
 
-      client.getProblems(USER, function(e, problems) {
+      client.getProblems('algorithms', USER, function(e, problems) {
         assert.deepEqual(e, EXPIRED_ERROR);
         done();
       });
@@ -68,9 +71,9 @@ describe('leetcode_client', function() {
 
     it('should fail if other error', function(done) {
       config.AUTO_LOGIN = true;
-      nock(config.URL_PROBLEMS).get('/').reply(503);
+      nock(URL_ALGORITHMS).get('/').reply(503);
 
-      client.getProblems(USER, function(e, problems) {
+      client.getProblems('algorithms', USER, function(e, problems) {
         var expected = {
           msg:        'http error',
           statusCode: 503
@@ -82,13 +85,13 @@ describe('leetcode_client', function() {
 
     it('should fail if http error in relogin', function(done) {
       config.AUTO_LOGIN = true;
-      nock(config.URL_PROBLEMS).get('/').reply(403);
-      nock(config.URL_PROBLEMS).get('/').reply(403);
+      nock(URL_ALGORITHMS).get('/').reply(403);
+      nock(URL_ALGORITHMS).get('/').reply(403);
       core.login = function(user, cb) {
         return cb('unknown error!');
       };
 
-      client.getProblems(USER, function(e, problems) {
+      client.getProblems('algorithms', USER, function(e, problems) {
         assert.deepEqual(e, EXPIRED_ERROR);
         done();
       });
@@ -97,9 +100,9 @@ describe('leetcode_client', function() {
 
   describe('#getProblems', function() {
     it('should ok', function(done) {
-      nock(config.URL_PROBLEMS).get('/').replyWithFile(200, './test/mock/problems.json.20160911');
+      nock(URL_ALGORITHMS).get('/').replyWithFile(200, './test/mock/problems.json.20160911');
 
-      client.getProblems(USER, function(e, problems) {
+      client.getProblems('algorithms', USER, function(e, problems) {
         assert.equal(e, null);
         assert.equal(problems.length, 377);
         done();
@@ -108,9 +111,9 @@ describe('leetcode_client', function() {
 
     it('should fail if not login', function(done) {
       config.AUTO_LOGIN = false;
-      nock(config.URL_PROBLEMS).get('/').replyWithFile(200, './test/mock/problems.nologin.json.20161015');
+      nock(URL_ALGORITHMS).get('/').replyWithFile(200, './test/mock/problems.nologin.json.20161015');
 
-      client.getProblems(USER, function(e, problems) {
+      client.getProblems('algorithms', USER, function(e, problems) {
         assert.deepEqual(e, EXPIRED_ERROR);
         done();
       });
@@ -121,12 +124,12 @@ describe('leetcode_client', function() {
     it('should ok', function(done) {
       nock('https://leetcode.com')
         .get('/problems/find-the-difference')
-        .replyWithFile(200, './test/mock/find-the-difference.html.20170424');
+        .replyWithFile(200, './test/mock/find-the-difference.html.20170714');
 
       client.getProblem(USER, PROBLEM, function(e, problem) {
         assert.equal(e, null);
-        assert.equal(problem.totalAC, 63380);
-        assert.equal(problem.totalSubmit, 123178);
+        assert.equal(problem.totalAC, '73.2K');
+        assert.equal(problem.totalSubmit, '142K');
         assert.equal(problem.desc,
           [
             '',
@@ -150,7 +153,7 @@ describe('leetcode_client', function() {
             ''
           ].join('\r\n'));
 
-        assert.equal(problem.templates.length, 7);
+        assert.equal(problem.templates.length, 11);
 
         assert.equal(problem.templates[0].value, 'cpp');
         assert.equal(problem.templates[0].text, 'C++');
@@ -189,18 +192,32 @@ describe('leetcode_client', function() {
             '        '
           ].join('\r\n'));
 
-        assert.equal(problem.templates[3].value, 'c');
-        assert.equal(problem.templates[3].text, 'C');
+        assert.equal(problem.templates[3].value, 'python3');
+        assert.equal(problem.templates[3].text, 'Python3');
         assert.equal(problem.templates[3].defaultCode,
+          [
+            'class Solution:',
+            '    def findTheDifference(self, s, t):',
+            '        """',
+            '        :type s: str',
+            '        :type t: str',
+            '        :rtype: str',
+            '        """',
+            '        '
+          ].join('\r\n'));
+
+        assert.equal(problem.templates[4].value, 'c');
+        assert.equal(problem.templates[4].text, 'C');
+        assert.equal(problem.templates[4].defaultCode,
           [
             'char findTheDifference(char* s, char* t) {',
             '    ',
             '}'
           ].join('\r\n'));
 
-        assert.equal(problem.templates[4].value, 'csharp');
-        assert.equal(problem.templates[4].text, 'C#');
-        assert.equal(problem.templates[4].defaultCode,
+        assert.equal(problem.templates[5].value, 'csharp');
+        assert.equal(problem.templates[5].text, 'C#');
+        assert.equal(problem.templates[5].defaultCode,
           [
             'public class Solution {',
             '    public char FindTheDifference(string s, string t) {',
@@ -209,9 +226,9 @@ describe('leetcode_client', function() {
             '}'
           ].join('\r\n'));
 
-        assert.equal(problem.templates[5].value, 'javascript');
-        assert.equal(problem.templates[5].text, 'JavaScript');
-        assert.equal(problem.templates[5].defaultCode,
+        assert.equal(problem.templates[6].value, 'javascript');
+        assert.equal(problem.templates[6].text, 'JavaScript');
+        assert.equal(problem.templates[6].defaultCode,
           [
             '/**',
             ' * @param {string} s',
@@ -223,9 +240,9 @@ describe('leetcode_client', function() {
             '};'
           ].join('\r\n'));
 
-        assert.equal(problem.templates[6].value, 'ruby');
-        assert.equal(problem.templates[6].text, 'Ruby');
-        assert.equal(problem.templates[6].defaultCode,
+        assert.equal(problem.templates[7].value, 'ruby');
+        assert.equal(problem.templates[7].text, 'Ruby');
+        assert.equal(problem.templates[7].defaultCode,
           [
             '# @param {String} s',
             '# @param {String} t',
@@ -234,6 +251,38 @@ describe('leetcode_client', function() {
             '    ',
             'end'
           ].join('\r\n'));
+
+        assert.equal(problem.templates[8].value, 'swift');
+        assert.equal(problem.templates[8].text, 'Swift');
+        assert.equal(problem.templates[8].defaultCode,
+          [
+            'class Solution {',
+            '    func findTheDifference(_ s: String, _ t: String) -> Character {',
+            '        ',
+            '    }',
+            '}'
+          ].join('\r\n'));
+
+        assert.equal(problem.templates[9].value, 'golang');
+        assert.equal(problem.templates[9].text, 'Go');
+        assert.equal(problem.templates[9].defaultCode,
+          [
+            'func findTheDifference(s string, t string) byte {',
+            '    ',
+            '}'
+          ].join('\r\n'));
+
+        assert.equal(problem.templates[10].value, 'scala');
+        assert.equal(problem.templates[10].text, 'Scala');
+        assert.equal(problem.templates[10].defaultCode,
+          [
+            'object Solution {',
+            '    def findTheDifference(s: String, t: String): Char = {',
+            '        ',
+            '    }',
+            '}'
+          ].join('\n'));
+
         done();
       });
     });
@@ -409,7 +458,7 @@ describe('leetcode_client', function() {
       var problem = {
         id:     1,
         name:   'Two Sum',
-        key:    'two-sum',
+        slug:   'two-sum',
         link:   'https://leetcode.com/problems/two-sum',
         locked: false
       };
@@ -570,5 +619,23 @@ describe('leetcode_client', function() {
       });
     });
   }); // #login
+
+  describe('#getFavorites', function() {
+    it('should ok', function(done) {
+      nock('https://leetcode.com')
+        .get('/list/api/questions')
+        .replyWithFile(200, './test/mock/favorites.json.20170716');
+
+      client.getFavorites(function(e, favorites) {
+        assert.equal(e, null);
+
+        var my = favorites.favorites.private_favorites;
+        assert.equal(my.length, 1);
+        assert.equal(my[0].name, 'Favorite');
+        assert.equal(my[0].id_hash, 'abcdefg');
+        done();
+      });
+    });
+  }); // #getFavorites
 });
 
